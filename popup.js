@@ -54,7 +54,8 @@ function updateUI() {
 }
 
 // Navigation
-goToSettings.addEventListener('click', () => {
+goToSettings.addEventListener('click', (e) => {
+  e.stopPropagation(); // Don't trigger mode switch
   mainView.classList.add('hidden');
   settingsView.classList.remove('hidden');
 });
