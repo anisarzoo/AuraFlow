@@ -4,6 +4,7 @@ let scrollMode = 'zen';
 let scrollDirection = 'down';
 let lastTimestamp = 0;
 let lastPulseTime = 0;
+let lastWarpTime = 0;
 let rafId = null;
 let PULSE_INTERVAL = 15000;
 let boostEnabled = false;
@@ -11,8 +12,61 @@ let boostEnabled = false;
 const MODE_LEVELS = {
   zen: 2,
   turbo: 30,
-  pulse: 1
+  pulse: 1,
+  warp: 0 // Special handling
 };
+
+// ============================================
+// SMART PRELOAD & ADAPTIVE FLOW
+// ============================================
+let isPreloading = false;
+
+function isTargetLoading(target) {
+  if (!target) return false;
+  const host = window.location.host;
+  
+  // Instagram Specific Loader Detection
+  if (host.includes('instagram.com')) {
+    const igLoader = document.querySelector('svg circle.x2p9j3c') || 
+                     document.querySelector('.x78zum5.xl56j7k.x1yzt98f') ||
+                     document.querySelector('div[role="progressbar"]');
+    if (igLoader) return true;
+  }
+
+  // Messenger/Facebook Specific
+  if (host.includes('messenger.com') || host.includes('facebook.com')) {
+    const fbLoader = document.querySelector('.x1ypdohk.xd16t52') || 
+                     document.querySelector('[role="progressbar"]');
+    if (fbLoader) return true;
+  }
+  
+  // Generic Fallback
+  return target !== window && target.querySelector('.loading, .spinner, .loader') !== null;
+}
+
+function predictivePreload(target) {
+  if (!boostEnabled || isPreloading || target === window) return;
+  
+  const host = window.location.host;
+  const threshold = 1200; // Trigger way before reaching the boundary
+
+  if (host.includes('instagram.com') || host.includes('messenger.com')) {
+    // If scrolling UP (history)
+    if (scrollDirection === 'up' && target.scrollTop < threshold) {
+      isPreloading = true;
+      const currentPos = target.scrollTop;
+      
+      // Trick the app into thinking we hit the top to trigger fetch
+      target.scrollTo({ top: 0, behavior: 'auto' });
+      
+      setTimeout(() => {
+        target.scrollTo({ top: currentPos, behavior: 'auto' });
+        // Cooldown to prevent spamming
+        setTimeout(() => { isPreloading = false; }, 3000);
+      }, 5);
+    }
+  }
+}
 
 // ============================================
 // PERFORMANCE BOOST LOGIC
@@ -80,10 +134,21 @@ function getScrollTarget() {
   }
   
   if (host.includes('instagram.com')) {
-    // IG Messages often use a div with specific overflow styles
+    // 1. Primary Selectors
     const igChat = document.querySelector('div[role="main"] div[style*="overflow-y: auto"]') ||
-                   document.querySelector('div.x168nmei.x13lgxp2.x5yr21d'); // Current DM container
+                   document.querySelector('div.x168nmei.x13lgxp2.x5yr21d') ||
+                   document.querySelector('.x9f619.x78zum5.xdt5ytf.x1iyjqo2.xs83m0k.x1x7p64p.x1n2onr6');
     if (igChat) return igChat;
+
+    // 2. Deep Search Fallback (Inside the main chat area)
+    const mainArea = document.querySelector('div[role="main"]');
+    if (mainArea) {
+      const scrollable = Array.from(mainArea.querySelectorAll('div')).find(el => {
+        const style = window.getComputedStyle(el);
+        return (style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
+      });
+      if (scrollable) return scrollable;
+    }
   }
 
   // 2. Generic "Deep Search": Find the largest scrollable element currently visible
@@ -116,6 +181,36 @@ function autoScroll(timestamp) {
   const dirMultiplier = scrollDirection === 'up' ? -1 : 1;
   const target = getScrollTarget();
 
+  if (scrollMode === 'warp') {
+    const isUp = scrollDirection === 'up';
+    const isWindow = target === window;
+    
+    if (isWindow) {
+      const targetPos = isUp ? 0 : document.documentElement.scrollHeight;
+      window.scrollTo(0, targetPos);
+    } else {
+      const style = window.getComputedStyle(target);
+      const isReverse = style.flexDirection === 'column-reverse';
+
+      if (isUp) {
+        if (isReverse) {
+          // Negative coordinate systems (Chrome/FF)
+          target.scrollTop = -target.scrollHeight; 
+          // Legacy/Inverted positive systems
+          if (target.scrollTop === 0) target.scrollTop = target.scrollHeight; 
+        } else {
+          target.scrollTop = 0;
+        }
+      } else {
+        // Down (Latest messages)
+        target.scrollTop = isReverse ? 0 : target.scrollHeight;
+      }
+    }
+    
+    rafId = requestAnimationFrame(autoScroll);
+    return;
+  }
+
   if (scrollMode === 'pulse') {
     const nextPulseDelay = PULSE_INTERVAL / scrollSpeed;
     if (timestamp - lastPulseTime > nextPulseDelay) {
@@ -126,11 +221,18 @@ function autoScroll(timestamp) {
       lastPulseTime = timestamp;
     }
   } else {
-    const velocity = scrollSpeed * (MODE_LEVELS[scrollMode] || 1) * dirMultiplier;
+    let velocity = scrollSpeed * (MODE_LEVELS[scrollMode] || 1) * dirMultiplier;
+    
+    // Adaptive Flow: Slow down if loading to avoid "hitting the wall"
+    if (boostEnabled && isTargetLoading(target)) {
+      velocity *= 0.15; // Smooth crawl while buffer fills
+    } else if (boostEnabled) {
+      predictivePreload(target);
+    }
+
     if (target === window) {
       window.scrollBy({ top: velocity, behavior: 'auto' });
     } else {
-      // Direct property manipulation for custom containers (Messenger/DM)
       target.scrollTop += velocity;
     }
   }
