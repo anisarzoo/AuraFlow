@@ -69,7 +69,41 @@ function removeBoost() {
 // ============================================
 // SCROLLING ENGINE
 // ============================================
-function getScrollTarget() { return window; }
+// Smart Selector: Finds the element that actually scrolls (needed for Chats/Reels)
+function getScrollTarget() {
+  const host = window.location.host;
+  
+  // 1. Specific refined selectors for major platforms
+  if (host.includes('messenger.com') || host.includes('facebook.com')) {
+    const chat = document.querySelector('[role="main"]') || document.querySelector('.x9f619.x78zum5.x1q0g3np');
+    if (chat) return chat;
+  }
+  
+  if (host.includes('instagram.com')) {
+    // IG Messages often use a div with specific overflow styles
+    const igChat = document.querySelector('div[role="main"] div[style*="overflow-y: auto"]') ||
+                   document.querySelector('div.x168nmei.x13lgxp2.x5yr21d'); // Current DM container
+    if (igChat) return igChat;
+  }
+
+  // 2. Generic "Deep Search": Find the largest scrollable element currently visible
+  let bestTarget = window;
+  let maxArea = 0;
+
+  const scrollables = document.querySelectorAll('div, section, article, main');
+  scrollables.forEach(el => {
+    const style = window.getComputedStyle(el);
+    if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+      const area = el.offsetWidth * el.offsetHeight;
+      if (area > maxArea) {
+        maxArea = area;
+        bestTarget = el;
+      }
+    }
+  });
+
+  return bestTarget;
+}
 
 function autoScroll(timestamp) {
   if (!scrollingActive) return;

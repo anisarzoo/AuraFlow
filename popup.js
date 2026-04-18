@@ -152,4 +152,15 @@ modeCards.forEach(card => {
   });
 });
 
-boostToggle.addEventListener('change', () => { boostEnabled = boostToggle.checked; chrome.storage.local.set({ boost: boostEnabled }); chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { if (tabs[0]?.id) { chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_BOOST', enabled: boostEnabled }); } }); });
+boostToggle.addEventListener('change', () => {
+  boostEnabled = boostToggle.checked;
+  chrome.storage.local.set({ boost: boostEnabled });
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_BOOST', enabled: boostEnabled }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    }
+  });
+});
+
