@@ -93,8 +93,12 @@ function autoScroll(timestamp) {
     }
   } else {
     const velocity = scrollSpeed * (MODE_LEVELS[scrollMode] || 1) * dirMultiplier;
-    if (target === window) { window.scrollBy(0, velocity); }
-    else { target.scrollTop += velocity; }
+    if (target === window) {
+      window.scrollBy({ top: velocity, behavior: 'auto' });
+    } else {
+      // Direct property manipulation for custom containers (Messenger/DM)
+      target.scrollTop += velocity;
+    }
   }
 
   rafId = requestAnimationFrame(autoScroll);
